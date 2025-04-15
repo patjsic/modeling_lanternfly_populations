@@ -25,6 +25,11 @@ def main(
     logger.success("Modeling training complete.")
     # -----------------------------------------
 
+@app.command()
+def train_gp(
+
+):
+    return None
 
 if __name__ == "__main__":
     app()

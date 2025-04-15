@@ -5,20 +5,21 @@ import geopandas as gpd
 from pathlib import Path
 from loguru import logger
 from tqdm import tqdm
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
 
-from modeling_lanternfly_populations.config import PROCESSED_DATA_DIR, RAW_DATA_DIR
+from modeling_lanternfly_populations.config import RAW_DATA_DIR
 from pyinaturalist import get_observations
 
 app = typer.Typer()
+
+MIN_LON, MIN_LAT = -124.848974, 24.396308   # Southwest corner
+MAX_LON, MAX_LAT = -66.885444, 49.384358    # Northeast corner
 
 @app.command()
 def load_observations(
     output_path: Path = RAW_DATA_DIR / "raw_lanternfly.parquet",
 ):
     #Hardcoded variables to find lanternfly species
-    MIN_LON, MIN_LAT = -124.848974, 24.396308   # Southwest corner
-    MAX_LON, MAX_LAT = -66.885444, 49.384358    # Northeast corner
     taxon_name = 'Lycorma delicatula'
     per_page = 200
     n_pages=50
@@ -71,9 +72,9 @@ def load_observations(
         crs='EPSG:4326'  # WGS84 lat/lon
     )
     gdf['observed_date'] = pd.to_datetime(gdf['observed_date'], utc=True)
-    print(gdf)
     gdf.to_parquet(output_path)
     logger.success(f"Loading dataset complete. Saved to {output_path}")
+
 
 @app.command()
 def test():
