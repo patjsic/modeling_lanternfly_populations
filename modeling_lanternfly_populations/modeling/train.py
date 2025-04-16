@@ -7,21 +7,12 @@ from loguru import logger
 from tqdm import tqdm
 import typer
 
+from modeling_lanternfly_populations.utils import _save_pickle
 from modeling_lanternfly_populations.config import MODELS_DIR, PROCESSED_DATA_DIR
 from UQpy.surrogates.gaussian_process.GaussianProcessRegression import GaussianProcessRegression
 from UQpy.utilities.kernels.euclidean_kernels import RBF
 
 app = typer.Typer()
-
-def _save_pickle(
-    filepath: Path,
-    object: object,
-):
-    logger.info(f"Saving pickle: {filepath}")
-    save_dir = os.path.dirname(filepath)
-    os.makedirs(save_dir, exist_ok = True) #Create the subdirectory if it doesn't already exist
-    with open(filepath, 'wb') as file:
-        pickle.dump(object, file)
 
 @app.command()
 def train_gp(

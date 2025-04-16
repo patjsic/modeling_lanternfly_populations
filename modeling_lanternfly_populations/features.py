@@ -8,7 +8,7 @@ from loguru import logger
 from tqdm import tqdm
 from shapely.geometry import Point, Polygon
 
-
+from modeling_lanternfly_populations.utils import _save_pickle
 from modeling_lanternfly_populations.config import RAW_DATA_DIR, INTERIM_DATA_DIR, PROCESSED_DATA_DIR
 
 app = typer.Typer()
@@ -27,14 +27,6 @@ def _load_data(
     except Exception as e:
         raise ValueError(f"Invalid parquet file found at {input_path}")
     
-def _save_pickle(
-    filepath: Path,
-    object: object,
-):
-    logger.info(f"Saving pickle: {filepath}")
-    with open(filepath, 'wb') as file:
-        pickle.dump(object, file)
-
 @app.command()
 def grid_data(
     cell_size: float = 0.5, #degree grid,
