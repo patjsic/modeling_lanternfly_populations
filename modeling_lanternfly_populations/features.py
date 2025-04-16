@@ -62,7 +62,7 @@ def grid_data(
     joined = gpd.sjoin(gdf, grid_gdf, how='left', predicate='within')
     counts_per_cell = joined.groupby('index_right').size()
     grid_gdf['observation_count'] = counts_per_cell
-    grid_gdf['observation_count'] = grid_gdf['observation_count'].fillna(0)
+    # grid_gdf['observation_count'] = grid_gdf['observation_count'].fillna(0)
     
     #Label centroids of polygons
     grid_gdf['lon'] = grid_gdf.geometry.centroid.x
