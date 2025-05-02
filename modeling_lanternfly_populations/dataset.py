@@ -1,4 +1,5 @@
 import typer
+import pysal
 import pandas as pd
 import geopandas as gpd
 
@@ -9,6 +10,7 @@ from shapely.geometry import Point
 
 from modeling_lanternfly_populations.config import RAW_DATA_DIR
 from pyinaturalist import get_observations
+from pysal.lib import weights
 
 app = typer.Typer()
 
@@ -73,8 +75,7 @@ def load_observations(
     )
     gdf['observed_date'] = pd.to_datetime(gdf['observed_date'], utc=True)
     gdf.to_parquet(output_path)
-    logger.success(f"Loading dataset complete. Saved to {output_path}")
-
+    logger.success(f"Loading dataset complete. Saved to {output_path}")  
 
 @app.command()
 def test():
