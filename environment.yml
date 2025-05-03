@@ -1,4 +1,4 @@
-name: modeling_lanternfly_populations
+name: lanternfly_model
 channels:
   - conda-forge
 dependencies:
@@ -9,7 +9,19 @@ dependencies:
   - tqdm
   - ruff
   - pytest
+  - numpy
+  - scipy
+  - geopandas
+  - shapely
+  - pyarrow
+  - scikit-learn
+  - jupyter
   - pip:
+    - pymc
+    - arviz
+    - uqpy
+    - pyinaturalist
     - python-dotenv
     - mkdocs
+    - pysal
     - -e .

@@ -1,3 +1,5 @@
+import os
+import re
 import typer
 import pickle
 import numpy as np
@@ -6,6 +8,7 @@ import geopandas as gpd
 from pathlib import Path
 from loguru import logger
 from tqdm import tqdm
+from scipy.sparse import save_npz
 from shapely.geometry import Point, Polygon
 
 from modeling_lanternfly_populations.utils import _save_pickle
@@ -54,11 +57,13 @@ def grid_data(
     joined = gpd.sjoin(gdf, grid_gdf, how='left', predicate='within')
     counts_per_cell = joined.groupby('index_right').size()
     grid_gdf['observation_count'] = counts_per_cell
-    # grid_gdf['observation_count'] = grid_gdf['observation_count'].fillna(0)
+    # grid_gdf['observation_count'] = grid_gdf['observation_count'].fillna(0) #Not sure if we want to fillna, since it makes observations sparse
     
     #Label centroids of polygons
     grid_gdf['lon'] = grid_gdf.geometry.centroid.x
     grid_gdf['lat'] = grid_gdf.geometry.centroid.y
+    grid_gdf = grid_gdf.reset_index(drop=True)       # ensures 0..n-1
+    grid_gdf['region_id'] = grid_gdf.index  
 
     SAVE_PATH = INTERIM_DATA_DIR / f"{cell_size}_deg_lanternfly.parquet"
     grid_gdf.to_parquet(SAVE_PATH)
@@ -89,7 +94,53 @@ def process_gp_data(
     _save_pickle(output_dir / "gp_y_train.pkl", y_train)
     _save_pickle(output_dir / "gp_y_test.pkl", y_test)
 
-    logger.info("Successfully saved GP data!")
+    logger.success("Successfully saved GP data!")
+
+@app.command()
+def build_adjacency(
+    data_dir: Path = INTERIM_DATA_DIR,
+    adj_type: str = "queen",
+    grid_size: float = 0.5,
+):
+    """
+    Generate adjacency matrix for existing gridded lanternfly data.
+    Looks for file of the form <float>_deg_lanternfly.parquet and chooses the first one.
+
+    'Queen' adjacency means polygons that share any boundary or corner are neighbors.
+    'Rook' adjacency means polygons that share boundaries, but not corners, are neighbors.
+    """
+    import pysal
+    import json
+    from pysal.lib import weights
+    logger.info(f"Finding neighbors based on {adj_type} adjacency.")
+    #Search for matching gridded data and load into parquet
+    # template = r'^\d+\.\d+_deg_lanternfly\.parquet$'
+    # data_path = data_dir / next((s for s in os.listdir(data_dir) if re.match(template, s)), '')
+    data_path = data_dir / f'{grid_size}_deg_lanternfly.parquet'
+
+    if not os.path.exists(data_path):
+        raise FileNotFoundError(f"No gridded lanternfly data found in path: {data_path}")
+    else:
+        lf_gdf = gpd.read_parquet(data_path)
+
+    # Build a spatial weights object (e.g., Queen contiguity)
+    if adj_type == 'rook':
+        w = weights.Rook.from_dataframe(lf_gdf, ids='region_id')
+    else:
+        w = weights.Queen.from_dataframe(lf_gdf, ids='region_id')
+
+    # Convert to a PySAL W object
+    w.transform = 'B'  # Make it binary (0/1 for adjacency)
+    W_sparse = w.sparse.tocsr()  
+
+    # Extract adjacency info as needed, e.g. neighbor list
+    # neighbors_dict = w.neighbors  # {region_id: [neighbor_ids]}
+
+    # with open(data_dir / 'neighbors.json', 'w', encoding='utf-8') as file:
+    #     json.dump(W_sparse, file, ensure_ascii=False, indent=4)
+    save_npz(data_dir / f'{grid_size}_neighbors.npz', W_sparse)
+
+    logger.success(f"Successfully saved adjacency data to {data_dir / f'{grid_size}_neighbors.json'}")
 
 if __name__ == "__main__":
     app()
