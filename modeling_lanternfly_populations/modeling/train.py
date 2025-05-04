@@ -12,7 +12,7 @@ from pathlib import Path
 from scipy.sparse import load_npz
 
 from loguru import logger
-from tqdm import tqdm
+# from tqdm import tqdm
 # from utils import load_json_file
 import typer
 
@@ -22,6 +22,7 @@ from UQpy.surrogates.gaussian_process.GaussianProcessRegression import GaussianP
 from UQpy.utilities.kernels.euclidean_kernels import RBF
 
 app = typer.Typer()
+
 
 def load_json_file(file_path):
     """
@@ -89,12 +90,13 @@ def train_gp(
 
 @app.command()
 def train_spatial_mrf(
-    output_dir: Path = MODELS_DIR,
+    output_dir: Path = MODELS_DIR / 'mrf',
     data_dir: Path = INTERIM_DATA_DIR,
     grid_size: float = 0.5,
 ):
     import matplotlib.pyplot as plt
     import arviz as az
+    import cloudpickle
     logger.info("Loading data...")
     W = load_npz(data_dir / f'{grid_size}_neighbors.npz').toarray() #Convert to a dense matrix
     N = W.shape[0]
@@ -130,27 +132,28 @@ def train_spatial_mrf(
         logger.info("Sampling posterior...")
         # start = pm.find_MAP()
         try:
+            if not os.path.exists(output_dir):
+                os.mkdir(output_dir)
             i_data = pm.sample(200, tune=100, progressbar=True, exception_verbosity=True)
+            # print(i_data.keys())
             # i_data = az.from_pymc(trace=trace, model=model)
-            i_data.to_netcdf(f'./test.nc') #load it using az.from_netcdf("path.nc")
+            i_data.to_netcdf(output_dir / f"{grid_size}_mrf_posterior.nc") #load it using az.from_netcdf("path.nc")
+            # print(dir(lambda_))
+            # model_config = {
+            #     "lambda_alpha": i_data["lambda_alpha"],
+            #     "lambda_beta": i_data["lambda_beta"],
+            #     "sigma_scale": i_data["sigma"],
+            # }
+            #Realistically what should be happening is saving model params as a json and loading the model structure
+            with open(output_dir / f"{grid_size}_mrf_model_params.pkl", "wb") as f:
+                cloudpickle.dump(model, f)
+
+            #save the 
         except Exception as e:
             with open('./log.txt', 'a+') as file:
                 file.write(f'ERROR: {e} \n')
             raise e
         logger.success("Data sampled successfully!")
-
-        # phi_posterior = trace.posterior['phi']  # dims: [chain, draw, region]
-
-        # # For example, compute posterior mean
-        # phi_mean = phi_posterior.mean(dim=["chain", "draw"]).values
-
-        # # Attach phi_mean back to your GeoDataFrame for mapping
-        # grid_gdf["phi_mean"] = phi_mean
-        # fig, ax = plt.subplots()
-        # grid_gdf.plot(column="phi_mean", ax=ax, legend=True)
-        # ax.set_title("Posterior Mean of Random Effect (phi)")
-        # plt.savefig('./temp.png')
-
 
 @app.command()
 def test():
