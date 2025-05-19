@@ -16,8 +16,13 @@ from modeling_lanternfly_populations.config import RAW_DATA_DIR, INTERIM_DATA_DI
 
 app = typer.Typer()
 
-MIN_LON, MIN_LAT = -124.848974, 24.396308   # Southwest corner
-MAX_LON, MAX_LAT = -66.885444, 49.384358    # Northeast corner
+# MIN_LON, MIN_LAT = -124.848974, 24.396308   # Southwest corner
+# MAX_LON, MAX_LAT = -66.885444, 49.384358    # Northeast corner
+
+# SELECT ONLY NORTHEAST REGION
+MIN_LON, MIN_LAT = -90.0, 35.0
+MAX_LON, MAX_LAT = -70.0, 45.0
+
 
 def _load_data(
     input_path: Path 

@@ -6,23 +6,47 @@ import os
 import json
 import pickle
 import numpy as np
-import pymc as pm
+import geopandas as gpd
+# import pymc as pm
+
 import pandas as pd
 from pathlib import Path
-from scipy.sparse import load_npz
 
 from loguru import logger
 # from tqdm import tqdm
 # from utils import load_json_file
 import typer
 
-from modeling_lanternfly_populations.utils import _save_pickle
+from modeling_lanternfly_populations.utils import _save_pickle, _save_txt, loopy_belief_propagation
 from modeling_lanternfly_populations.config import MODELS_DIR, PROCESSED_DATA_DIR, INTERIM_DATA_DIR
 from UQpy.surrogates.gaussian_process.GaussianProcessRegression import GaussianProcessRegression
 from UQpy.utilities.kernels.euclidean_kernels import RBF
 
 app = typer.Typer()
 
+def save_mn_lbp_data(nodes: object, neighbors: dict, unary_factors: dict, potential_factors: dict, domain_size: int, grid_size: float=0.5):
+    """Save Markov Network metadata to load for loopy belief propagation.
+    """
+    try:
+        mrf_dir = Path(MODELS_DIR / f'{grid_size}_mrf/')
+
+        #Save nodes as pkl
+        _save_pickle(mrf_dir / f'{grid_size}_nodes.pkl', nodes)
+
+        #Save neighbors as pkl
+        _save_pickle(mrf_dir / f'{grid_size}_neighbors.pkl', neighbors)
+
+        #Save potentials as pkl
+        _save_pickle(mrf_dir / f'{grid_size}_unary.pkl', unary_factors)
+        _save_pickle(mrf_dir / f'{grid_size}_potentials.pkl', potential_factors)
+
+        #Save Remaining metadata
+        #TODO: Eventually make this a general **args situation with an input dictionary
+        #where we can save any additional metadata as \n delimited list (saved to .txt of course)
+        _save_txt(mrf_dir / f'{grid_size}_domain_size.txt', str(domain_size))
+        return True
+    except:
+        return False
 
 def load_json_file(file_path):
     """
@@ -93,67 +117,126 @@ def train_spatial_mrf(
     output_dir: Path = MODELS_DIR / 'mrf',
     data_dir: Path = INTERIM_DATA_DIR,
     grid_size: float = 0.5,
+    n_bins: int = 15,
+    alpha: float = 0.1,
 ):
-    import matplotlib.pyplot as plt
-    import arviz as az
-    import cloudpickle
+    """
+    Currently this function breaks the modular paradigm of the codebase. It performs training
+    and eval in the same step, primarily since I'm not sure how I can separate the 
+    """
+    # import matplotlib.pyplot as plt
+    # import arviz as az
+    from pysal.lib import weights
+    from pgmpy.models import MarkovNetwork
+    from pgmpy.factors.discrete import DiscreteFactor
+    # from pgmpy.inference import BeliefPropagation, BeliefPropagationWithMessagePassing
     logger.info("Loading data...")
-    W = load_npz(data_dir / f'{grid_size}_neighbors.npz').toarray() #Convert to a dense matrix
-    N = W.shape[0]
-    # print(neighbors.shape)
-    grid_gdf = pd.read_parquet(data_dir / f'{grid_size}_deg_lanternfly.parquet')
-    population_counts = grid_gdf['observation_count'].fillna(0).values
+    # W = load_npz(data_dir / f'{grid_size}_neighbors.npz').toarray() #Convert to a dense matrix
+
+    lf_gdf = gpd.read_parquet(data_dir / f'{grid_size}_deg_lanternfly.parquet')#.fillna(0)#.dropna()
+    population_counts = lf_gdf['observation_count'].values
+    W = weights.Rook.from_dataframe(lf_gdf, ids='region_id')
+    W.transform='B'
+    n_nodes = len(population_counts)
     # neighbors = [neighbors_dict[str(i)] for i in range(n_regions)]
     # num_neighbors = neighbors.shape[0] #np.array([len(nbr) for nbr in neighbors])
     logger.success("Data loaded successfully!")
 
-    with pm.Model() as model:
-        # Hyperpriors
-        lambda_ = pm.Gamma('lambda', alpha=1., beta=1.)  # Regularization parameter
-        sigma = pm.HalfNormal('sigma', sigma=1.)  # Standard deviation for observation noise
+    #Determine bin limits for population count data
+    min_c = int(lf_gdf.observation_count.min())
+    max_c = int(lf_gdf.observation_count.max())
+    domain_size = max_c - min_c + 1
 
-        # Latent variable for the population count at each grid cell
-        # We model these as Gaussian variables
-        # x = pm.Normal('x', mu=0, sigma=10, shape=len(population_counts))
+    counts = lf_gdf["observation_count"]
+    non_na = counts.dropna()
 
-        # Smoothness prior (penalizing large differences between neighbors)
-        # smoothness_term = pm.math.dot(W, x) + lambda_#W.dot(x) * lambda_
- 
-        # print(population_counts)
+    # pd.qcut returns both labels and the bin edges
+    _, bin_edges = pd.qcut(non_na, q=n_bins, retbins=True, duplicates="drop")
 
-        # Observation likelihood: the population counts at each grid cell
-        # logger.info("Calculating likelihood...")
-        for i in range(len(population_counts)):     
-            pm.Normal(f'obs_{i}', mu=population_counts[i], sigma=sigma, observed=population_counts[i]) #+ smoothness_term[i], sigma=sigma, observed=population_counts[i])
+    # make sure edges cover the full range
+    bin_edges[0]   = non_na.min()
+    bin_edges[-1]  = non_na.max()
 
-        logger.success("Likelihood calculated successfully!")
+    # compute bin‐centers for the smoothing potential
+    centers     = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    domain_size = len(centers)  # this will be n_bins or fewer if duplicates dropped
 
-        # Sampling the posterior
-        logger.info("Sampling posterior...")
-        # start = pm.find_MAP()
-        try:
-            if not os.path.exists(output_dir):
-                os.mkdir(output_dir)
-            i_data = pm.sample(200, tune=100, progressbar=True, exception_verbosity=True)
-            # print(i_data.keys())
-            # i_data = az.from_pymc(trace=trace, model=model)
-            i_data.to_netcdf(output_dir / f"{grid_size}_mrf_posterior.nc") #load it using az.from_netcdf("path.nc")
-            # print(dir(lambda_))
-            # model_config = {
-            #     "lambda_alpha": i_data["lambda_alpha"],
-            #     "lambda_beta": i_data["lambda_beta"],
-            #     "sigma_scale": i_data["sigma"],
-            # }
-            #Realistically what should be happening is saving model params as a json and loading the model structure
-            with open(output_dir / f"{grid_size}_mrf_model_params.pkl", "wb") as f:
-                cloudpickle.dump(model, f)
+    diff  = np.abs(centers[:, None] - centers[None, :])
+    pot   = np.exp(-alpha * diff)
+    flat  = pot.ravel(order="C").tolist()  # row-major flatten
 
-            #save the 
-        except Exception as e:
-            with open('./log.txt', 'a+') as file:
-                file.write(f'ERROR: {e} \n')
-            raise e
-        logger.success("Data sampled successfully!")
+    #Initialize Markov model
+    mn = MarkovNetwork()
+
+    #add all nodes (use strings for pgmpy)
+    node_ids = lf_gdf["region_id"].astype(str).tolist()
+    mn.add_nodes_from(node_ids)
+
+    #add edges from your PySAL adjacency w.neighbors
+    edges = [(str(rid), str(nbr))
+            for rid, neighs in W.neighbors.items()
+            for nbr in neighs if rid < nbr]
+    mn.add_edges_from(edges)
+
+    #add pairwise smoothing factors
+    for u, v in edges:
+        fac = DiscreteFactor(
+            variables=[u, v],
+            cardinality=[domain_size, domain_size],
+            values=flat
+        )
+        mn.add_factors(fac)
+
+    #add unary “clamping” factors for *observed* cells only
+    unary_factors = {}
+    for _, row in lf_gdf.iterrows():
+        rid, cnt = str(row.region_id), row.observation_count
+        if not pd.isna(cnt):
+            # map raw count → bin index in [0..domain_size-1]
+            # bin_idx = int(np.digitize(cnt, bin_edges) - 1)
+            raw_idx = np.digitize(cnt, bin_edges) - 1
+            bin_idx = int(np.clip(raw_idx, 0, domain_size - 1))
+            values  = [1.0 if i == bin_idx else 0.0
+                    for i in range(domain_size)]
+
+            fac = DiscreteFactor(
+                variables=[rid],
+                cardinality=[domain_size],
+                values=values
+            )
+            mn.add_factors(fac)
+
+            #Save off clamped factors for lbp
+            vec = np.zeros(domain_size)
+            vec[bin_idx] = 1.0
+            unary_factors[rid] = vec
+    
+    #save pairwise edges for smoothing
+    pairwise_potentials = {}
+    for u, v in edges:
+        # ensure both directions
+        pairwise_potentials[(u, v)] = pot
+        pairwise_potentials[(v, u)] = pot.T
+
+    #perform lbp
+    nodes = mn.nodes()
+    neighbors = {
+        str(region_id): [str(nbr) for nbr in nbrs]
+        for region_id, nbrs in W.neighbors.items()
+    }
+
+    #Save all parameters for performing LBP as defined in our custom utils function
+    save_mn_lbp_data(nodes, neighbors, unary_factors, pairwise_potentials, domain_size)
+
+    # beliefs = loopy_belief_propagation(
+    #     nodes,
+    #     neighbors,
+    #     unary_factors,
+    #     pairwise_potentials,
+    #     domain_size,
+    #     max_iters=1000,
+    #     tol=1e-8
+    # )
 
 @app.command()
 def test():
