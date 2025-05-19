@@ -19,7 +19,6 @@ dependencies:
   - pip:
     - daft-pgm
     - pgmpy
-    - pyagrum
     - cloudpickle
     - pymc
     - arviz
