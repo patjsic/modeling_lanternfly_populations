@@ -17,6 +17,9 @@ dependencies:
   - scikit-learn
   - jupyter
   - pip:
+    - daft-pgm
+    - pgmpy
+    - pyagrum
     - cloudpickle
     - pymc
     - arviz
