@@ -19,6 +19,25 @@ def _save_pickle(
     except Exception as e:
         raise e
 
+def _load_pickle(
+    filepath: Path,
+):
+    logger.info(f"Loading pickle: {filepath}")
+    with open(filepath, 'rb') as file:
+        ret = pickle.load(file)
+        logger.success(f"Successfully loaded pickle file: {filepath}")
+        return ret
+
+def _load_txt(
+    filepath: Path,
+):
+    logger.info(f"Loading txt file: {filepath}")
+    with open(filepath, "r") as file:
+        ret = file.read()
+        logger.success(f"Successfully loaded text file: {filepath}")
+        return ret
+
+
 def _save_txt(
     filepath: Path,
     save_text: str,
